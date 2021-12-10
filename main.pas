@@ -5,7 +5,6 @@ interface
 uses
   Windows,
   Winapi.Messages,
-  VCL.Graphics,
   System.SysUtils,
   System.Types,
   System.UITypes,
@@ -21,7 +20,6 @@ uses
   FMX.Controls.Presentation,
   FMX.StdCtrls,
   FMX.Objects,
-
   BlurBehindControl;
 
   function newWndProc(hwnd: HWND; uMsg: UINT; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall;
@@ -29,11 +27,10 @@ uses
 type
 
   TMainForm = class(TForm)
-    Button1: TButton;
 
   private
-    { Private declarations }
-    BlurPanel : TBlurBehindControl;
+    m_BlurPanel     : TBlurBehindControl;
+    m_bmpScreenShot : TBitMap;
 
     procedure UpdateBlurPanel;
     procedure RepaintBlurPanel;
@@ -41,13 +38,13 @@ type
   public
     constructor Create(AOwner: TComponent); override;
 
+    property ScreenShot : TBitMap read m_bmpScreenShot write m_bmpScreenShot;
   end;
 
 var
-  MainForm: TMainForm;
-
-  OldWindowProc: Pointer = nil;
-  NewWindowProc: Pointer = nil;
+  MainForm      : TMainForm;
+  OldWindowProc : Pointer = nil;
+  NewWindowProc : Pointer = nil;
 
 
 implementation
@@ -60,50 +57,39 @@ uses
 {$R *.fmx}
 
 constructor TMainForm.Create(AOwner: TComponent);
-var
-  ScreenShot : TBitMap;
 begin
-  ScreenShot := TakeScreenShot;
-
-  inherited;
-
-  BlurPanel := TBlurBehindControl.Create(Self);
-  BlurPanel.Position.X := 0;
-  BlurPanel.Position.Y := 0;
-
-  BlurPanel.Width  := Width;
-  BlurPanel.Height := Height;
-
-  BlurPanel.BackGroundBitmap := ScreenShot;
-
-  BlurPanel.SendToBack;
-
-  Button1.BringToFront;
-
-  ScreenShot.Free;
+  Inherited;
 
   OldWindowProc:= Pointer(GetWindowLong(FmxHandleToHWND(self.Handle), GWL_WNDPROC));
   NewWindowProc:= Pointer(SetWindowLong(FmxHandleToHWND(self.Handle), GWL_WNDPROC, Integer(@newWndProc)));
+
+  m_BlurPanel := TBlurBehindControl.Create(Self);
+  m_BlurPanel.SendToBack;
+
+  UpdateBlurPanel;
 end;
 
 procedure TMainForm.UpdateBlurPanel;
-var
-  ScreenShot : TBitMap;
 begin
-  ScreenShot := TakeScreenShot;
-
   MainForm.Visible := False;
-  BlurPanel.BackGroundBitmap := ScreenShot;
+
+  if m_bmpScreenShot = nil then
+    m_bmpScreenShot := TakeScreenShot;
+
+  m_BlurPanel.BackGroundBitmap := m_bmpScreenShot;
+  RepaintBlurPanel;
+  FreeAndNil(m_bmpScreenShot);
+
   MainForm.Visible := True;
-
-  BlurPanel.Repaint;
-
-  ScreenShot.Free;
 end;
 
 procedure TMainForm.RepaintBlurPanel;
 begin
-  BlurPanel.Repaint;
+  m_BlurPanel.Position.X := 0;
+  m_BlurPanel.Position.Y := 0;
+  m_BlurPanel.Width      := Width;
+  m_BlurPanel.Height     := Height;
+  m_BlurPanel.Repaint;
 end;
 
 function newWndProc(hwnd: HWND; uMsg: UINT; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall;
@@ -112,13 +98,14 @@ begin
   if hwnd = FmxHandleToHWND(MainForm.Handle) then
   begin
     case uMsg of
-      WM_MOVE:
+      WM_MOVE, WM_SIZE:
       begin
         MainForm.RepaintBlurPanel;
       end;
-      WM_SHOWWINDOW, WM_SETFOCUS:
+      WM_ACTIVATEAPP:
       begin
         MainForm.UpdateBlurPanel;
+        Result := CallWindowProc(OldWindowProc, hwnd, uMsg, wParam, lParam);
       end
       else
       Result := CallWindowProc(OldWindowProc, hwnd, uMsg, wParam, lParam);
